@@ -1016,6 +1016,8 @@ emacsLikeXPKeymap' p = M.fromList $
   , (xK_y, pasteString)
   , (xK_g, quit)
   , (xK_bracketleft, quit)
+  -- TESTING COMPLETION CLEARING
+  , (xK_m, setCurrentCompletions Nothing )
   ] ++
   map (first $ (,) mod1Mask) -- meta key + <key>
   [ (xK_BackSpace, killWord' p Prev)

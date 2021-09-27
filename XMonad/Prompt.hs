@@ -936,7 +936,7 @@ prevComplIndex st = case complWinDim st of
         (colm, rowm) =
           ((currentcol - 1) `mod` length cwCols, (currentrow - 1) `mod` length cwRows)
     in if rowm == currentrow - 1
-       then (currentcol, currentrow +1)
+       then (currentcol, currentrow - 1)
        else (colm, rowm)
 
 tryAutoComplete :: XP Bool

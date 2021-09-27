@@ -183,7 +183,10 @@ data XPConfig =
                                                 -- history entries to remember
         , promptKeymap          :: M.Map (KeyMask,KeySym) (XP ())
                                                 -- ^ Mapping from key combinations to actions
-        , completionKey         :: (KeyMask, KeySym)     -- ^ Key that should trigger completion
+        , nextCompletionKey     :: (KeyMask, KeySym)
+                                                -- ^ Key that should trigger completion to the right
+        , prevCompletionKey     :: (KeyMask, KeySym)
+                                                -- ^ Key that should trigger completion to the left
         , changeModeKey         :: KeySym       -- ^ Key to change mode (when the prompt has multiple modes)
         , defaultText           :: String       -- ^ The text by default in the prompt line
         , autoComplete          :: Maybe Int    -- ^ Just x: if only one completion remains, auto-select it,
@@ -329,7 +332,8 @@ instance Default XPConfig where
         , borderColor           = border def
         , promptBorderWidth     = 1
         , promptKeymap          = defaultXPKeymap
-        , completionKey         = (0,xK_Tab)
+        , nextCompletionKey     = (0,xK_Tab)
+        , prevCompletionKey     = (1,xK_Tab)
         , changeModeKey         = xK_grave
         , position              = Bottom
         , height                = 18
@@ -697,17 +701,19 @@ merely discarded, but passed to the respective application window.
 -- and mode switching handlers.
 handleMain :: KeyStroke -> Event -> XP ()
 handleMain stroke@(keysym,_) KeyEvent{ev_event_type = t, ev_state = m} = do
-    (compKey,modeKey) <- gets $ (completionKey &&& changeModeKey) . config
+    (modeKey, (nextCompKey, prevCompKey)) <- gets $ (changeModeKey &&& nextCompletionKey &&& prevCompletionKey) . config
     keymask <- cleanMask m
     -- haven't subscribed to keyRelease, so just in case
     when (t == keyPress) $
-        if (keymask,keysym) == compKey
-           then getCurrentCompletions >>= handleCompletionMain
-           else do
-                setCurrentCompletions Nothing
-                if keysym == modeKey
-                   then modify setNextMode >> updateWindows
-                   else handleInputMain keymask stroke
+        if (keymask,keysym) == nextCompKey
+           then getCurrentCompletions >>= handleCompletionMain Forward
+           else if (keymask,keysym) == prevCompKey
+                   then getCurrentCompletions >>= handleCompletionMain Backward
+                   else do
+                        setCurrentCompletions Nothing
+                        if keysym == modeKey
+                           then modify setNextMode >> updateWindows
+                           else handleInputMain keymask stroke
 handleMain stroke event = handleOther stroke event
 
 -- | Prompt input handler for the main loop.
@@ -725,6 +731,7 @@ handleInputMain keymask (keysym,keystr) = do
                 complete <- tryAutoComplete
                 when complete $ setSuccess True >> setDone True
 
+data Dir = Forward | Backward
 -- There are two options to store the completion list during the main loop:
 -- * Use the State monad, with 'Nothing' as the initial state.
 -- * Join the output of the event loop handler to the input of the (same)
@@ -733,17 +740,17 @@ handleInputMain keymask (keysym,keystr) = do
 --
 -- | Prompt completion handler for the main loop. Given 'Nothing', generate the
 -- current completion list. With the current list, trigger a completion.
-handleCompletionMain :: Maybe [String] -> XP ()
-handleCompletionMain Nothing   = do
+handleCompletionMain :: Dir -> Maybe [String] -> XP ()
+handleCompletionMain dir Nothing   = do
     cs <- getCompletions
     when (length cs > 1) $
         modify $ \s -> s { showComplWin = True }
     setCurrentCompletions $ Just cs
-    handleCompletion cs
-handleCompletionMain (Just cs) = handleCompletion cs
+    handleCompletion dir cs
+handleCompletionMain dir (Just cs) = handleCompletion dir cs
 
-handleCompletion :: [String] -> XP ()
-handleCompletion cs = do
+handleCompletion :: Dir -> [String] -> XP ()
+handleCompletion dir cs = do
     alwaysHlight <- gets $ alwaysHighlight . config
     st <- get
 
@@ -798,7 +805,9 @@ handleCompletion cs = do
           | otherwise = replaceCompletion prevCompl
          where
           hlCompl     :: String       = fromMaybe (command st) $ highlightedItem st l
-          complIndex' :: (Int, Int)   = prevComplIndex st
+          complIndex' :: (Int, Int)   = case dir of
+                                          Forward -> nextComplIndex st
+                                          Backward -> prevComplIndex st
           nextHlCompl :: Maybe String = highlightedItem st{ complIndex = complIndex' } cs
 
           isSuffixOfCmd        :: Bool = hlCompl `isSuffixOf` command st
@@ -923,8 +932,8 @@ nextComplIndex st = case complWinDim st of
         (colm, rowm) =
           ((currentcol + 1) `mod` length cwCols, (currentrow + 1) `mod` length cwRows)
      in if rowm == currentrow + 1
-        then (currentcol, currentrow + 1)  -- We are not in the last row, so go down
-        else (colm, rowm)                  -- otherwise advance to the next column
+        then (currentcol, rowm)  -- We are not in the last row, so go down
+        else (colm, rowm)        -- otherwise advance to the next column
 
 -- | Return the @(Column, row)@ of the previous highlight, or @(0, 0)@
 -- if there is no prompt window or a wrap-around occurs.
@@ -936,7 +945,7 @@ prevComplIndex st = case complWinDim st of
         (colm, rowm) =
           ((currentcol - 1) `mod` length cwCols, (currentrow - 1) `mod` length cwRows)
     in if rowm == currentrow - 1
-       then (currentcol, currentrow - 1)
+       then (currentcol, rowm)
        else (colm, rowm)
 
 tryAutoComplete :: XP Bool

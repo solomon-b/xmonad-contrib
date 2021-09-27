@@ -332,8 +332,8 @@ instance Default XPConfig where
         , borderColor           = border def
         , promptBorderWidth     = 1
         , promptKeymap          = defaultXPKeymap
-        , nextCompletionKey     = (0,xK_Tab)
-        , prevCompletionKey     = (1,xK_Tab)
+        , nextCompletionKey     = (0, xK_Tab)
+        , prevCompletionKey     = (shiftMask, xK_Tab)
         , changeModeKey         = xK_grave
         , position              = Bottom
         , height                = 18
@@ -706,9 +706,9 @@ handleMain stroke@(keysym,_) KeyEvent{ev_event_type = t, ev_state = m} = do
     -- haven't subscribed to keyRelease, so just in case
     when (t == keyPress) $
         if (keymask,keysym) == nextCompKey
-           then getCurrentCompletions >>= handleCompletionMain Forward
+           then getCurrentCompletions >>= handleCompletionMain Backward
            else if (keymask,keysym) == prevCompKey
-                   then getCurrentCompletions >>= handleCompletionMain Backward
+                   then getCurrentCompletions >>= handleCompletionMain Forward
                    else do
                         setCurrentCompletions Nothing
                         if keysym == modeKey

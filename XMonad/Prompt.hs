@@ -798,7 +798,7 @@ handleCompletion cs = do
           | otherwise = replaceCompletion prevCompl
          where
           hlCompl     :: String       = fromMaybe (command st) $ highlightedItem st l
-          complIndex' :: (Int, Int)   = nextComplIndex st
+          complIndex' :: (Int, Int)   = prevComplIndex st
           nextHlCompl :: Maybe String = highlightedItem st{ complIndex = complIndex' } cs
 
           isSuffixOfCmd        :: Bool = hlCompl `isSuffixOf` command st
@@ -926,6 +926,19 @@ nextComplIndex st = case complWinDim st of
         then (currentcol, currentrow + 1)  -- We are not in the last row, so go down
         else (colm, rowm)                  -- otherwise advance to the next column
 
+-- | Return the @(Column, row)@ of the previous highlight, or @(0, 0)@
+-- if there is no prompt window or a wrap-around occurs.
+prevComplIndex :: XPState -> (Int, Int)
+prevComplIndex st = case complWinDim st of
+  Nothing -> (0, 0)
+  Just ComplWindowDim{ cwCols, cwRows } ->
+    let (currentcol, currentrow) = complIndex st
+        (colm, rowm) =
+          ((currentcol - 1) `mod` length cwCols, (currentrow - 1) `mod` length cwRows)
+    in if rowm == currentrow - 1
+       then (currentcol, currentrow +1)
+       else (colm, rowm)
+
 tryAutoComplete :: XP Bool
 tryAutoComplete = do
     ac <- gets (autoComplete . config)
@@ -1016,8 +1029,6 @@ emacsLikeXPKeymap' p = M.fromList $
   , (xK_y, pasteString)
   , (xK_g, quit)
   , (xK_bracketleft, quit)
-  -- TESTING COMPLETION CLEARING
-  , (xK_m, setCurrentCompletions Nothing )
   ] ++
   map (first $ (,) mod1Mask) -- meta key + <key>
   [ (xK_BackSpace, killWord' p Prev)
